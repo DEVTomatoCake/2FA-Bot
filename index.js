@@ -13,7 +13,6 @@ const ems = require("enhanced-ms")({shortFormat: true})
 const moment = require("moment")
 require("moment-duration-format")
 const speakeasy = require("./speakeasy.js")
-const { migrateSlashOptions } = require("./util/util.js")
 const QRCode = require("qrcode")
 const schedule = require("node-schedule")
 
@@ -74,7 +73,7 @@ const verifymodal = new Discord.ModalBuilder()
 				new Discord.TextInputBuilder()
 					.setCustomId("setup_code")
 					.setLabel("Enter your 2fa code")
-					.setStyle("SHORT")
+					.setStyle(Discord.TextInputStyle.Short)
 					.setPlaceholder("2FA-Code, z.B. 123456")
 					.setMinLength(6)
 					.setMaxLength(6)
@@ -105,21 +104,21 @@ function updateSlashcommands() {
 			dmPermission: false,
 			options: [{
 				name: "list",
-				type: "SUB_COMMAND",
+				type: Discord.ApplicationCommandOptionType.Subcommand,
 				description: "Shows the settings",
 				descriptionLocalizations: {
 					"de": "Zeigt die Einstellungen an"
 				}
 			},{
 				name: "roleadd",
-				type: "SUB_COMMAND",
+				type: Discord.ApplicationCommandOptionType.Subcommand,
 				description: "Adds a new role",
 				descriptionLocalizations: {
 					"de": "Fügt eine neue Rolle hinzu"
 				},
 				options: [{
 					name: "role",
-					type: "ROLE",
+					type: Discord.ApplicationCommandOptionType.Role,
 					description: "The role",
 					descriptionLocalizations: {
 						"de": "Die Rolle"
@@ -127,19 +126,19 @@ function updateSlashcommands() {
 					required: true
 				},{
 					name: "time",
-					type: "STRING",
+					type: Discord.ApplicationCommandOptionType.String,
 					description: "Die Zeit, nachdem die Rolle entfernt werden soll und der Nutzer sich neu authentifizieren muss"
 				}]
 			},{
 				name: "roleremove",
-				type: "SUB_COMMAND",
+				type: Discord.ApplicationCommandOptionType.Subcommand,
 				description: "Removes a verified role",
 				descriptionLocalizations: {
 					"de": "Löscht eine Verifizierten-Rolle"
 				},
 				options: [{
 					name: "role",
-					type: "ROLE",
+					type: Discord.ApplicationCommandOptionType.Role,
 					description: "The role",
 					descriptionLocalizations: {
 						"de": "Die Rolle"
@@ -156,23 +155,14 @@ function updateSlashcommands() {
 			dmPermission: false,
 			options: [{
 				name: "code",
-				type: "STRING",
+				type: Discord.ApplicationCommandOptionType.String,
 				description: "Der Code der Auth-App oder einer deiner Backupcodes",
 				required: true
 			}]
 		}
 	]
 
-	var migratedcommands = []
-	commands.every(cmd => {
-		let cmdcopy = cmd
-
-		if (cmdcopy.options) cmdcopy.options = migrateSlashOptions(cmdcopy.options)
-
-		migratedcommands.push(cmdcopy)
-		return true
-	})
-	bot.application.commands.set(migratedcommands)
+	bot.application.commands.set(commands)
 }
 
 schedule.scheduleJob("*/3 * * * *", () => { // Check every 3 minutes if a verification role's time is over
