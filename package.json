@@ -1,0 +1,19 @@
+{
+  "name": "2fa-bot",
+  "version": "1.0.0",
+  "author": "TomatoCake",
+  "license": "ISC",
+  "repository": "https://github.com/DEVTomatoCake/2FA-Bot",
+  "scripts": {
+    "lint": "npx eslint . --report-unused-disable-directives"
+  },
+  "dependencies": {
+    "discord.js": "^14.5.0",
+    "enhanced-ms": "^2.1.0",
+    "moment": "^2.29.4",
+    "enmap": "^5.9.2",
+    "moment-duration-format": "^2.3.2",
+    "qrcode": "^1.5.1",
+    "node-schedule": "^2.1.0"
+  }
+}
