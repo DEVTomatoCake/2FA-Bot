@@ -9,10 +9,12 @@ const bot = new Discord.Client({
 		Discord.GatewayIntentBits.Guilds
 	]
 })
+bot.login("<Token>")
+
 const ems = require("enhanced-ms")({shortFormat: true})
 const moment = require("moment")
 require("moment-duration-format")
-const speakeasy = require("./speakeasy.js")
+const speakeasy = require("@levminer/speakeasy")
 const QRCode = require("qrcode")
 const schedule = require("node-schedule")
 
@@ -25,12 +27,12 @@ bot.mfasettings = new Enmap({
 })
 
 /*
-	{
-		id: "", // Role id
-		time: 0, // Zeit in ms, wann die Rolle entfernt werden soll - 0 = permanent
-		channels: [], // List of channels in which users can verify and get the role
-		roles: [] // List of roles needed to verify
-	}
+{
+	id: "", // Role ID
+	time: 0, // Time in ms after which to remove the role - 0 = permanently
+	channels: [], // List of channels in which users can verify and get the role
+	roles: [] // List of roles needed to verify
+}
 */
 const defaultSettings = {
 	roles: {}
@@ -39,7 +41,7 @@ const defaultSettings = {
 const botlinkrow = new Discord.ActionRowBuilder()
 	.addComponents(
 		new Discord.MessageButton()
-			.setLabel("Support-Server")
+			.setLabel("Support server")
 			.setEmoji("712731848673067108")
 			.setURL("https://discord.gg/ZqzFUC8qe9")
 			.setStyle("LINK")
@@ -66,82 +68,84 @@ const setupverifyrow = new Discord.ActionRowBuilder()
 	)
 const verifymodal = new Discord.ModalBuilder()
 	.setCustomId("setup_confirm")
-	.setTitle("2FA bestätigen")
+	.setTitle("Confirm 2FA")
 	.addComponents(
 		new Discord.ActionRowBuilder()
 			.addComponents(
 				new Discord.TextInputBuilder()
 					.setCustomId("setup_code")
-					.setLabel("Enter your 2fa code")
+					.setLabel("Enter your 2FA code")
 					.setStyle(Discord.TextInputStyle.Short)
-					.setPlaceholder("2FA-Code, z.B. 123456")
+					.setPlaceholder("2FA code, e.g. 123456")
 					.setMinLength(6)
 					.setMaxLength(6)
 			)
 	)
 
-function updateSlashcommands() {
-	var commands = [
+const updateSlashcommands = () => {
+	bot.application.commands.set([
 		{
 			name: "help",
 			description: "Displays help and stats about the bot",
 			descriptionLocalizations: {
-				"de": "Zeigt die Hilfe und Statistiken vom Bot an"
+				de: "Zeigt die Hilfe und Statistiken vom Bot an"
 			}
 		},{
 			name: "setup",
 			description: "Sets up 2FA",
 			descriptionLocalizations: {
-				"de": "Richtet 2FA ein"
+				de: "Richtet 2FA ein"
 			}
 		},{
 			name: "config",
 			description: "Modifies the config for the server",
 			descriptionLocalizations: {
-				"de": "Ändert die Einstellungen für den Server"
+				de: "Ändert die Einstellungen für den Server"
 			},
 			defaultMemberPermissions: ["Administrator"],
-			dmPermission: false,
+			integrationTypes: [0],
+			contexts: [0],
 			options: [{
 				name: "list",
 				type: Discord.ApplicationCommandOptionType.Subcommand,
-				description: "Shows the settings",
+				description: "Displays the settings",
 				descriptionLocalizations: {
-					"de": "Zeigt die Einstellungen an"
+					de: "Zeigt die Einstellungen an"
 				}
 			},{
 				name: "roleadd",
 				type: Discord.ApplicationCommandOptionType.Subcommand,
 				description: "Adds a new role",
 				descriptionLocalizations: {
-					"de": "Fügt eine neue Rolle hinzu"
+					de: "Fügt eine neue Rolle hinzu"
 				},
 				options: [{
 					name: "role",
 					type: Discord.ApplicationCommandOptionType.Role,
 					description: "The role",
 					descriptionLocalizations: {
-						"de": "Die Rolle"
+						de: "Die Rolle"
 					},
 					required: true
 				},{
 					name: "time",
 					type: Discord.ApplicationCommandOptionType.String,
-					description: "Die Zeit, nachdem die Rolle entfernt werden soll und der Nutzer sich neu authentifizieren muss"
+					description: "Die Zeit, nachdem die Rolle entfernt werden soll und der Nutzer sich neu authentifizieren muss",
+					maxLength: 50
 				}]
 			},{
 				name: "roleremove",
 				type: Discord.ApplicationCommandOptionType.Subcommand,
 				description: "Removes a verified role",
 				descriptionLocalizations: {
-					"de": "Löscht eine Verifizierten-Rolle"
+					de: "Löscht eine Verifizierten-Rolle"
 				},
 				options: [{
 					name: "role",
 					type: Discord.ApplicationCommandOptionType.Role,
 					description: "The role",
 					descriptionLocalizations: {
-						"de": "Die Rolle"
+						de: "Die Rolle"
 					},
 					required: true
 				}]
@@ -150,26 +154,27 @@ function updateSlashcommands() {
 			name: "auth",
 			description: "Authenticates you",
 			descriptionLocalizations: {
-				"de": "Authenfiziert dich"
+				de: "Authenfiziert dich"
 			},
-			dmPermission: false,
+			integrationTypes: [0],
+			contexts: [0],
 			options: [{
 				name: "code",
 				type: Discord.ApplicationCommandOptionType.String,
 				description: "Der Code der Auth-App oder einer deiner Backupcodes",
-				required: true
+				required: true,
+				minLength: 6,
+				maxLength: 11
 			}]
 		}
-	]
-
-	bot.application.commands.set(commands)
+	])
 }
 
 schedule.scheduleJob("*/3 * * * *", () => { // Check every 3 minutes if a verification role's time is over
 	bot.mfa.forEach(user => {
 		if (!user.timers || user.timers.length == 0) return
 
-		var newtimers = []
+		const newtimers = []
 		user.timers.forEach(async timer => {
 			if (Date.now() >= timer.time) {
 				const member = await bot.guilds.cache.get(timer.guild).members.fetch(user.id)
@@ -193,23 +198,30 @@ bot.on("guildDelete", guild => {
 })
 
 bot.on("interactionCreate", async interaction => {
-	if (interaction.type == Discord.InteractionType.ModalSubmit) {
-		if (interaction.customId = "2fa_setup_verify") {
-			const secret = bot.mfa.get(interaction.user.id, "tempsecret")
+	if (interaction.type == Discord.InteractionType.ModalSubmit && interaction.customId == "2fa_setup_verify") {
+		const secret = bot.mfa.get(interaction.user.id, "tempsecret")
 
-			const verified = speakeasy.totp.verify({secret: secret, token: parseInt(interaction.fields.getTextInputValue("setup_code")), encoding: "base32", window: 1})
-			if (!verified) return interaction.reply({content: ":x: The code is invalid!", ephemeral: true})
+		const verified = speakeasy.totp.verify({secret, token: Number.parseInt(interaction.fields.getTextInputValue("setup_code")), encoding: "base32", window: 1})
+		if (!verified) return interaction.reply({content: ":x: The code is invalid!", ephemeral: true})
 
-			const codes = [Math.random(), Math.random(), Math.random(), Math.random(), Math.random()].map(code => code.toString(36).slice(2))
-			bot.mfa.set(interaction.user.id, {
-				id: interaction.user.id,
-				secret: secret,
-				backupCodes: codes,
-				timers: []
-			})
+		const codes = [Math.random(), Math.random(), Math.random(), Math.random(), Math.random()].map(code => code.toString(36).slice(2))
+		bot.mfa.set(interaction.user.id, {
+			id: interaction.user.id,
+			secret,
+			backupCodes: codes,
+			timers: []
+		})
 
-			interaction.update({content: "2FA wurde erfolgreich aktiviert!\n\nDies sind deine Backupcodes - sie sind die einzige Möglichkeit, 2FA zu deaktivieren, solltest du dein Gerät verlieren! **Speichere sie an einem sicheren Ort.**", files: [{name: "2fabot_backupcodes.txt", attachment: Buffer.from("2FA Bot Backupcodes\n" + codes.join("\n"), "utf8")}], embeds: [], components: []})
-		}
+		interaction.update({
+			content: "2FA wurde erfolgreich aktiviert!\n\nDies sind deine Backupcodes - sie sind die einzige Möglichkeit, " +
+				"2FA zu deaktivieren, solltest du dein Gerät verlieren! **Speichere sie an einem sicheren Ort.**",
+			files: [{
+				name: "2fabot_backupcodes.txt",
+				attachment: Buffer.from("2FA Bot Backupcodes\n" + codes.join("\n"), "utf8")
+			}],
+			embeds: [],
+			components: []
+		})
 	}
 	if (interaction.type != Discord.InteractionType.ApplicationCommand) return
 
@@ -225,7 +237,7 @@ bot.on("interactionCreate", async interaction => {
 		await interaction.reply({embeds: [embed], components: [botlinkrow]})
 	} else if (interaction.commandName == "config") {
 		if (interaction.options.getSubcommand(false) == "list") {
-			var text = ""
+			let text = ""
 			Object.keys(settings).forEach(key => {
 				text += key + ": " + JSON.stringify(settings[key]) + "\n"
 			})
@@ -248,19 +260,25 @@ bot.on("interactionCreate", async interaction => {
 		} else if (interaction.options.getSubcommand(false) == "roleremove") {
 			const findrole = interaction.options.getRole("role")
 
-			var newroles = []
+			const newroles = []
 			Object.values(settings.roles).forEach(role => {
 				if (role.id != findrole.id) newroles.push(role)
 			})
 
-			if (newroles.length != Object.values(settings.roles).length) {
+			if (newroles.length == Object.values(settings.roles).length) interaction.reply("The role <@&" + findrole.id + "> is not a verification role!")
+			else {
 				bot.mfasettings.set(interaction.guild.id, newroles, "roles")
 				interaction.reply("The verification role <@&" + findrole.id + "> was removed!")
-			} else interaction.reply("The role <@&" + findrole.id + "> is not a verification role!")
+			}
 		}
 	} else if (interaction.commandName == "setup") {
 		if (bot.mfa.has(interaction.user.id)) {
-			let msg = await interaction.reply({content: ":warning: Du hast bereits eine aktive Verifizierung! Wenn du fortfährst wird die alte Verifizierung ungültig.", components: [confirmrow], ephemeral: true, fetchReply: true})
+			const msg = await interaction.reply({
+				content: ":warning: Du hast bereits eine aktive Verifizierung! Wenn du fortfährst wird die alte Verifizierung ungültig.",
+				components: [confirmrow],
+				ephemeral: true,
+				fetchReply: true
+			})
 
 			const confirmbutton = await msg.awaitMessageComponent({time: 45000, componentType: Discord.ComponentType.Button})
 			if (confirmbutton.customId == "2fa_setup_no") return interaction.editReply({content: ":x: Cancelled.", components: []})
@@ -274,10 +292,30 @@ bot.on("interactionCreate", async interaction => {
 		QRCode.toDataURL(secret.otpauth_url.replace("2FA Bot", "2FA%20Bot") + "&algorithm=SHA1&digits=6&period=30", async (err, url) => {
 			const embed = new Discord.MessageEmbed()
 				.setAuthor({name: "2FA Setup", iconURL: bot.user.displayAvatarURL()})
-				.setDescription("Bitte scanne diesen QR-Code mit einer Authenticator-App ein.\n\nAlternativ kannst du auch \"Zeitbasiert\" auswählen und folgendes Secret angeben:\n||**`" + secret.base32 + "`**||")
+				.setDescription("Bitte scanne diesen QR-Code mit einer Authenticator-App ein.\n\nAlternativ kannst du auch \"Zeitbasiert\" " +
+					"auswählen und folgendes Secret angeben:\n||**`" + secret.base32 + "`**||")
 				.setImage("attachment://qrcode.png")
-			if (interaction.replied) await interaction.editReply({content: null, embeds: [embed], files: [{name: "qrcode.png", attachment: new Buffer.from(url.split(",")[1], "base64"), description: "2FA-QR-Code"}], components: [setupverifyrow], ephemeral: true})
-			else await interaction.reply({content: null, embeds: [embed], files: [{name: "qrcode.png", attachment: new Buffer.from(url.split(",")[1], "base64"), description: "2FA-QR-Code"}], components: [setupverifyrow], ephemeral: true})
+
+			if (interaction.replied) await interaction.editReply({
+				content: null,
+				embeds: [embed],
+				files: [{
+					name: "qrcode.png",
+					attachment: new Buffer.from(url.split(",")[1], "base64"),
+					description: "2FA-QR-Code"
+				}],
+				components: [setupverifyrow],
+				ephemeral: true
+			})
+			else await interaction.reply({
+				embeds: [embed],
+				files: [{
+					name: "qrcode.png",
+					attachment: new Buffer.from(url.split(",")[1], "base64"),
+					description: "2FA-QR-Code"}],
+					components: [setupverifyrow],
+					ephemeral: true
+				})
 			const msg = await interaction.fetchReply()
 
 			const collector = msg.createMessageComponentCollector({time: 120000, componentType: Discord.ComponentType.Button})
@@ -287,26 +325,22 @@ bot.on("interactionCreate", async interaction => {
 		})
 	} else if (interaction.commandName == "auth") {
 		const user = bot.mfa.get(interaction.user.id)
-		if (!user) return interaction.reply({content: "You dont have an account! Create one using </setup:0>.", ephemeral: true})
-		const secret = user.secret
+		if (!user) return interaction.reply({content: "You dont have an account! Create one using `/setup`.", ephemeral: true})
 
 		if (interaction.options.getString("code").toString().length != 6) return interaction.reply({content: "The code must be 6 characters long!", ephemeral: true})
 
-		const verified = speakeasy.totp.verify({secret: secret, token: interaction.options.getString("code"), encoding: "base32", window: 1})
+		const verified = speakeasy.totp.verify({secret: user.secret, token: interaction.options.getString("code"), encoding: "base32", window: 1})
 		if (!verified) return interaction.reply({content: ":x: Invalid code!", ephemeral: true})
 
 		interaction.reply({content: ":white_check_mark: You were verified successfully!", ephemeral: true})
 		Object.values(settings.roles).forEach(role => {
 			interaction.member.roles.add(role.id)
-			if (role.time > 0) {
+			if (role.time > 0)
 				bot.mfa.push(interaction.user.id, {
 					role: role.id,
 					guild: interaction.guild.id,
 					time: Date.now() + role.time
 				}, "timers")
-			}
 		})
 	}
 })
-
-bot.login("<Token>")
